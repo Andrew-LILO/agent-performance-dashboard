@@ -6,9 +6,13 @@ import FilterableList from './components/FilterableList';
 import PerformanceChart from './components/PerformanceChart';
 import PerformanceTable from './components/PerformanceTable';
 import LeadModal from './components/LeadModal';
+import Status from './components/Status';
 import { Toaster } from "@/components/ui/sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/sonner";
+
+// Configure axios
+axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL;
 
 // --- Constants ---
 const defaultStartDate = (() => {
@@ -71,28 +75,66 @@ function App() {
 
     try {
       // Fetch agents and dispositions concurrently
-      // REMOVED campaigns fetch
       const [agentsResponse, dispositionsResponse] = await Promise.all([
         axios.get('/api/agents'),
         axios.get('/api/dispositions'),
       ]);
 
-      const fetchedAgents = agentsResponse.data || [];
-      const fetchedDispositions = dispositionsResponse.data || [];
+      // Validate agents data
+      const fetchedAgents = agentsResponse.data;
+      console.log('Raw agents data:', fetchedAgents);
+      
+      if (!Array.isArray(fetchedAgents)) {
+        throw new Error(`Expected an array for agents, got: ${typeof fetchedAgents}`);
+      }
+      
+      // Validate each agent object
+      const validAgents = fetchedAgents.filter(agent => {
+        if (!agent || typeof agent !== 'object') {
+          console.warn('Invalid agent entry:', agent);
+          return false;
+        }
+        if (!agent.id_convoso_agent || !agent.name_convoso_agent) {
+          console.warn('Agent missing required fields:', agent);
+          return false;
+        }
+        return true;
+      });
 
-      console.log("Fetched Agents:", fetchedAgents.length);
-      console.log("Fetched Dispositions:", fetchedDispositions.length);
+      // Validate dispositions data
+      const fetchedDispositions = dispositionsResponse.data;
+      console.log('Raw dispositions data:', fetchedDispositions);
+      
+      if (!Array.isArray(fetchedDispositions)) {
+        throw new Error(`Expected an array for dispositions, got: ${typeof fetchedDispositions}`);
+      }
+      
+      // Validate each disposition object
+      const validDispositions = fetchedDispositions.filter(disposition => {
+        if (!disposition || typeof disposition !== 'object') {
+          console.warn('Invalid disposition entry:', disposition);
+          return false;
+        }
+        if (!disposition.status_code_convoso || !disposition.status_name_convoso) {
+          console.warn('Disposition missing required fields:', disposition);
+          return false;
+        }
+        return true;
+      });
 
-      setAgents(fetchedAgents);
-      setDispositions(fetchedDispositions);
+      console.log("Valid Agents:", validAgents.length);
+      console.log("Valid Dispositions:", validDispositions.length);
+
+      setAgents(validAgents);
+      setDispositions(validDispositions);
 
       // Select all agents by default
-      setSelectedAgentIds(fetchedAgents.map(agent => agent.id_convoso_agent));
+      setSelectedAgentIds(validAgents.map(agent => agent.id_convoso_agent));
 
       // Select ONLY 'QLSENT' disposition by default
       const defaultDispositionCode = 'QLSENT';
       // Check if 'QLSENT' actually exists in the fetched list
-      const qlsentExists = fetchedDispositions.some(d => d.status_code_convoso === defaultDispositionCode);
+      const qlsentExists = validDispositions.some(d => d.status_code_convoso === defaultDispositionCode);
       setSelectedDispositionCodes(qlsentExists ? [defaultDispositionCode] : []);
 
     } catch (error) {
@@ -112,39 +154,99 @@ function App() {
     // Removed campaigns from destructuring
     const { start, end, dispositions, agents } = currentFilters;
 
-    if (!start || !end || !dispositions || dispositions.length === 0 || !agents || agents.length === 0) {
-       console.log("Skipping summary fetch due to missing required filters (Date, Agents, Dispositions):", currentFilters);
-       setSummaryData(null); setChartData(null); setError(null);
-       return;
-    }
-
-    // Removed campaigns from log
-    console.log("Fetching call log summary for:", { start, end, dispositions: dispositions.length, agents: agents.length });
-    setIsSummaryLoading(true);
-    setError(null);
+    // Validate date inputs
+    const validateDate = (dateStr, label) => {
+      console.log(`Validating ${label} date:`, dateStr);
+      if (!dateStr) {
+        throw new Error(`${label} date is required`);
+      }
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) {
+        throw new Error(`Invalid ${label} date: ${dateStr}`);
+      }
+      return true;
+    };
 
     try {
+      // Validate dates first
+      validateDate(start, 'Start');
+      validateDate(end, 'End');
+
+      // Validate date range
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+      if (endDate < startDate) {
+        throw new Error('End date cannot be before start date');
+      }
+
+      // Validate other required parameters
+      if (!dispositions || !Array.isArray(dispositions) || dispositions.length === 0) {
+        throw new Error('At least one disposition must be selected');
+      }
+      if (!agents || !Array.isArray(agents) || agents.length === 0) {
+        throw new Error('At least one agent must be selected');
+      }
+
+      console.log("Fetching call log summary for:", { 
+        start, 
+        end, 
+        dispositions: dispositions.length, 
+        agents: agents.length,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString()
+      });
+
+      setIsSummaryLoading(true);
+      setError(null);
+
       const params = new URLSearchParams({
         startDate: start,
         endDate: end,
         dispositionCodes: dispositions.join(','),
         agentIds: agents.join(','),
-        // REMOVED campaignIds parameter
       });
 
       const response = await axios.get(`/api/call-log-summary?${params}`);
-      const aggregatedData = response.data || [];
-      console.log(`Received ${aggregatedData.length} aggregated agent records.`);
-      setSummaryData(aggregatedData);
-      setChartData(aggregatedData.map(agent => ({
-        id: agent.id, name: agent.name, value: agent.total_calls,
-      })));
+      const aggregatedData = response.data;
+
+      // Validate response data
+      console.log('Raw aggregated data:', aggregatedData);
+      
+      if (!Array.isArray(aggregatedData)) {
+        throw new Error(`Expected an array for aggregated data, got: ${typeof aggregatedData}`);
+      }
+
+      // Validate each record in aggregated data
+      const validAggregatedData = aggregatedData.filter(record => {
+        if (!record || typeof record !== 'object') {
+          console.warn('Invalid record:', record);
+          return false;
+        }
+        if (!record.id || !record.name || typeof record.total_calls !== 'number') {
+          console.warn('Record missing required fields:', record);
+          return false;
+        }
+        return true;
+      });
+
+      console.log(`Received ${validAggregatedData.length} valid aggregated agent records.`);
+      setSummaryData(validAggregatedData);
+      
+      // Create chart data only from valid records
+      const validChartData = validAggregatedData.map(agent => ({
+        id: agent.id,
+        name: agent.name,
+        value: agent.total_calls,
+      }));
+      console.log('Chart data:', validChartData);
+      setChartData(validChartData);
 
     } catch (error) {
       console.error('Error fetching call log summary:', error);
       const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
       setError(`Failed to fetch summary data: ${errorMsg}`);
-      setSummaryData(null); setChartData(null);
+      setSummaryData(null);
+      setChartData(null);
     } finally {
       console.log("Setting summary loading FALSE");
       setIsSummaryLoading(false);
@@ -207,29 +309,58 @@ function App() {
 
   // Handle Row Click for Modal
   const handleRowClick = async (agentSummary) => {
-    if (!agentSummary || !agentSummary.id) {
-        console.error("Invalid agent data passed to handleRowClick");
-        setModalError("Invalid agent data provided.");
-        setIsModalOpen(true);
-        setIsLoadingModal(false);
-        return;
+    console.log('Row click data:', agentSummary);
+
+    // Validate agent summary data
+    if (!agentSummary || typeof agentSummary !== 'object') {
+      console.error("Invalid agent summary data:", agentSummary);
+      setModalError("Invalid agent data provided");
+      setIsModalOpen(true);
+      setIsLoadingModal(false);
+      return;
     }
 
-    // Update title generation - REMOVED campaignText
-    const dispositionText = selectedDispositionCodes.length === dispositions.length
+    if (!agentSummary.id || !agentSummary.name) {
+      console.error("Agent summary missing required fields:", agentSummary);
+      setModalError("Incomplete agent data");
+      setIsModalOpen(true);
+      setIsLoadingModal(false);
+      return;
+    }
+
+    try {
+      // Validate dates before proceeding
+      const validateDate = (dateStr, label) => {
+        if (!dateStr) throw new Error(`${label} date is required`);
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) throw new Error(`Invalid ${label} date: ${dateStr}`);
+        return true;
+      };
+
+      validateDate(startDate, 'Start');
+      validateDate(endDate, 'End');
+
+      // Validate disposition codes
+      if (!Array.isArray(selectedDispositionCodes) || selectedDispositionCodes.length === 0) {
+        throw new Error('At least one disposition must be selected');
+      }
+
+      // Update title generation
+      const dispositionText = selectedDispositionCodes.length === dispositions.length
         ? 'All Selected Dispositions'
         : selectedDispositionCodes.length === 1
         ? dispositions.find(d => d.status_code_convoso === selectedDispositionCodes[0])?.status_name_convoso || selectedDispositionCodes[0]
         : `${selectedDispositionCodes.length} Dispositions`;
 
-    const title = `${agentSummary.name} | ${dispositionText} | ${startDate} to ${endDate}`; // Simplified title
+      const title = `${agentSummary.name} | ${dispositionText} | ${startDate} to ${endDate}`;
 
-    setModalTitle(title);
-    setIsModalOpen(true);
-    setModalData(null); setModalError(null); setIsLoadingModal(true);
+      setModalTitle(title);
+      setIsModalOpen(true);
+      setModalData(null);
+      setModalError(null);
+      setIsLoadingModal(true);
 
-    try {
-      // Update params - REMOVED campaignIds
+      // Update params
       const params = new URLSearchParams({
         startDate,
         endDate,
@@ -239,9 +370,33 @@ function App() {
 
       console.log(`Fetching details for Agent ID: ${agentSummary.id} with params:`, params.toString());
       const response = await axios.get(`/api/call-log-details?${params}`);
-      const detailedData = response.data || [];
-      console.log(`Received ${detailedData.length} detailed records for modal.`);
-      setModalData(detailedData);
+      const detailedData = response.data;
+
+      // Validate response data
+      console.log('Raw detailed data:', detailedData);
+
+      if (!Array.isArray(detailedData)) {
+        throw new Error(`Expected an array for detailed data, got: ${typeof detailedData}`);
+      }
+
+      // Validate each record in detailed data
+      const validDetailedData = detailedData.filter(record => {
+        if (!record || typeof record !== 'object') {
+          console.warn('Invalid detail record:', record);
+          return false;
+        }
+        // Add validation for required fields
+        const requiredFields = ['call_log_id', 'call_date', 'disposition_code', 'agent_name'];
+        const missingFields = requiredFields.filter(field => !record[field]);
+        if (missingFields.length > 0) {
+          console.warn(`Record missing required fields: ${missingFields.join(', ')}`, record);
+          return false;
+        }
+        return true;
+      });
+
+      console.log(`Received ${validDetailedData.length} valid detailed records for modal.`);
+      setModalData(validDetailedData);
 
     } catch (error) {
       console.error('Error fetching detailed call log/lead data:', error);
@@ -265,94 +420,107 @@ function App() {
    }
 
    return (
-    <div className="min-h-screen bg-background">
+    <div className="container mx-auto px-4 py-8">
       <Toaster />
-      <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full max-w-[3200px] mx-auto">
-        <header className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">Agent Call Performance Dashboard</h1>
-          <p className="text-muted-foreground">Monitor agent activity, disposition statistics, and lead details.</p>
-        </header>
+      <h1 className="text-3xl font-bold mb-8">Agent Performance Dashboard</h1>
+      
+      {/* Date Range Picker */}
+      <div className="mb-8">
+        <DateRangePicker
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={setStartDate}
+          onEndDateChange={setEndDate}
+        />
+      </div>
 
-        {/* Error Display Area */}
-        {error && (
-          <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-md text-destructive">
-            <strong className="font-bold">Error:</strong>
-            <span className="block sm:inline"> {error}</span>
-          </div>
-        )}
-
-        {/* Responsive Filters Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-          {/* Date Range Picker */}
-          <div className="lg:col-span-1">
-            <DateRangePicker
-              startDate={startDate} endDate={endDate}
-              onStartDateChange={setStartDate} onEndDateChange={setEndDate}
-            />
-          </div>
-          
-          {/* Agent Filter */}
-          <div className="lg:col-span-1">
-            <FilterableList
-              title="Agents" items={agents} selectedIds={selectedAgentIds}
-              onToggleItem={handleAgentToggle} onSelectAll={handleSelectAllAgents} onSelectNone={handleSelectNoneAgents}
-              searchTerm={agentSearchTerm} onSearchChange={setAgentSearchTerm}
-              getItemId={item => item.id_convoso_agent} getItemLabel={item => item.name_convoso_agent}
-              placeholder="Search Agents..."
-            />
-          </div>
-          
-          {/* Disposition Filter */}
-          <div className="lg:col-span-1 xl:col-span-2">
-            <FilterableList
-              title="Dispositions" items={dispositions} selectedIds={selectedDispositionCodes}
-              onToggleItem={handleDispositionToggle} onSelectAll={handleSelectAllDispositions} onSelectNone={handleSelectNoneDispositions}
-              searchTerm={dispoSearchTerm} onSearchChange={setDispoSearchTerm}
-              getItemId={item => item.status_code_convoso} getItemLabel={item => `${item.status_name_convoso} (${item.status_code_convoso})`}
-              placeholder="Search Dispositions..."
-            />
-          </div>
+      {/* Filters Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        {/* Agent Filter */}
+        <div className="bg-white p-4 rounded shadow">
+          <FilterableList
+            title="Agents"
+            items={agents}
+            selectedIds={selectedAgentIds}
+            onToggleItem={handleAgentToggle}
+            onSelectAll={handleSelectAllAgents}
+            onSelectNone={handleSelectNoneAgents}
+            searchTerm={agentSearchTerm}
+            onSearchChange={setAgentSearchTerm}
+            getItemId={item => item.id_convoso_agent}
+            getItemLabel={item => item.name_convoso_agent}
+            isLoading={isLoading}
+          />
         </div>
 
-        {/* Loading Indicator for Summary Data */}
-        {isSummaryLoading && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1">
-              <Skeleton className="h-[400px] w-full" />
-            </div>
-            <div className="lg:col-span-2">
-              <Skeleton className="h-[400px] w-full" />
-            </div>
+        {/* Disposition Filter */}
+        <div className="bg-white p-4 rounded shadow">
+          <FilterableList
+            title="Dispositions"
+            items={dispositions}
+            selectedIds={selectedDispositionCodes}
+            onToggleItem={handleDispositionToggle}
+            onSelectAll={handleSelectAllDispositions}
+            onSelectNone={handleSelectNoneDispositions}
+            searchTerm={dispoSearchTerm}
+            onSearchChange={setDispoSearchTerm}
+            getItemId={item => item.status_code_convoso}
+            getItemLabel={item => `${item.status_code_convoso} - ${item.status_name_convoso}`}
+            isLoading={isLoading}
+          />
+        </div>
+      </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-8">
+          <strong className="font-bold">Error:</strong>
+          <span className="block sm:inline"> {error}</span>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {isSummaryLoading && (
+        <div className="space-y-4 mb-8">
+          <Skeleton className="h-[400px] w-full" />
+          <Skeleton className="h-[200px] w-full" />
+        </div>
+      )}
+
+      {/* Results Display */}
+      {!isSummaryLoading && summaryData && (
+        <>
+          {/* Performance Chart */}
+          <div className="bg-white p-4 rounded shadow mb-8">
+            <h2 className="text-xl font-bold mb-4">Performance Chart</h2>
+            <PerformanceChart data={chartData} />
           </div>
-        )}
 
-        {/* Results Display Area */}
-        {!isSummaryLoading && !error && (
-          <>
-            {summaryData && summaryData.length > 0 ? (
-              <div className="grid grid-cols-1 gap-6">
-                <div className="w-full">
-                  <PerformanceChart data={chartData} />
-                </div>
-                <div className="w-full">
-                  <PerformanceTable data={summaryData} onRowClick={handleRowClick} />
-                </div>
-              </div>
-            ) : (
-              !isLoading && (selectedAgentIds.length > 0 && selectedDispositionCodes.length > 0) && (
-                <div className="bg-background p-10 rounded-lg shadow border text-center">
-                  <p className="text-muted-foreground">No call data found matching the selected filters.</p>
-                </div>
-              )
-            )}
-          </>
-        )}
+          {/* Performance Table */}
+          <div className="bg-white p-4 rounded shadow mb-8">
+            <h2 className="text-xl font-bold mb-4">Performance Details</h2>
+            <PerformanceTable
+              data={summaryData}
+              onRowClick={handleRowClick}
+              selectedDispositions={selectedDispositionCodes}
+            />
+          </div>
+        </>
+      )}
 
-        {/* Modal */}
-        <LeadModal
-          isOpen={isModalOpen} onClose={closeModal} title={modalTitle}
-          data={modalData} isLoading={isLoadingModal} error={modalError}
-        />
+      {/* Lead Modal */}
+      <LeadModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={modalTitle}
+        data={modalData}
+        isLoading={isLoadingModal}
+        error={modalError}
+      />
+
+      {/* Backend Status */}
+      <div className="mt-8">
+        <Status />
       </div>
     </div>
   );
