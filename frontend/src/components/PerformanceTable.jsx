@@ -12,7 +12,19 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 function PerformanceTable({ data, onRowClick }) {
   if (!data || data.length === 0) {
-    return null;
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg font-semibold">Agent Call Summary</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center py-8">
+            <p className="text-muted-foreground">No data available for the selected filters</p>
+            <p className="text-sm text-muted-foreground mt-2">Try selecting different dates or dispositions</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   // Sort data by total calls descending

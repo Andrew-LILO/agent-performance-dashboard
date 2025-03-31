@@ -19,7 +19,19 @@ const getColor = (index) => COLORS[index % COLORS.length];
 
 function PerformanceChart({ data }) {
   if (!data || data.length === 0) {
-    return null;
+    return (
+      <Card className="h-full">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg font-semibold">Total Calls by Agent</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4" style={{ height: "400px" }}>
+          <div className="flex flex-col items-center justify-center h-full">
+            <p className="text-muted-foreground">No data available for the selected filters</p>
+            <p className="text-sm text-muted-foreground mt-2">Try selecting different dates or dispositions</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   // Sort data for better visualization
