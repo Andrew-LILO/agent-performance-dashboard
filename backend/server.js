@@ -33,6 +33,17 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const app = express();
 app.use(express.json());
 
+// Health check endpoint
+app.get('/status', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development',
+    version: process.version
+  });
+});
+
 // --- Hardcoded Data (Replace with dynamic fetch in production if needed) ---
 
 const AGENTS_DATA = [
