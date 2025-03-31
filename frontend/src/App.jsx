@@ -254,7 +254,7 @@ function App() {
 
       console.log('Sending request with body:', requestBody);
       
-      const response = await axios.post('/api/call-log-summary', requestBody);
+      const response = await axios.post('/call-log-summary', requestBody);
       console.log('Raw API response:', response);
       const aggregatedData = response.data;
 
@@ -461,7 +461,7 @@ function App() {
       };
 
       console.log(`Fetching details for Agent ID: ${agentSummary.id} with body:`, requestBody);
-      const response = await axios.post('/api/call-log-details', requestBody);
+      const response = await axios.post('/call-log-details', requestBody);
       const detailedData = response.data;
 
       // Validate response data
