@@ -2,8 +2,11 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
+    "start": "node server.js",
+    "build": "echo \"No build step required for backend\" && exit 0",
+    "dev": "nodemon server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -20,5 +23,8 @@
     "node-cron": "^3.0.3",
     "postcss": "^8.5.3",
     "tailwindcss": "^4.0.17"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   }
 }

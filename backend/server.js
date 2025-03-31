@@ -763,8 +763,15 @@ app.get('/api/call-log-details', async (req, res) => {
 // GET /api/leaderboard (Keep existing implementation using Supabase if needed)
 app.get('/api/leaderboard', async (req, res) => { /* ... implementation ... */ });
 
-// Basic health check endpoint
-app.get('/health', (req, res) => res.status(200).send('OK'));
+// Basic health check endpoint with more details
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
 
 // --- Start Server ---
 app.listen(PORT, () => {
