@@ -216,23 +216,19 @@ function App() {
 
       // Format dates with time components
       const formatDateWithTime = (dateStr, isEndDate = false) => {
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) {
-          throw new Error(`Invalid date: ${dateStr}`);
-        }
-
-        // Pad numbers to ensure two digits
-        const pad = (num) => String(num).padStart(2, '0');
+        const [year, month, day] = dateStr.split('-').map(num => parseInt(num, 10));
         
-        const year = date.getFullYear();
-        const month = pad(date.getMonth() + 1); // getMonth() returns 0-11
-        const day = pad(date.getDate());
-        const hours = isEndDate ? '23' : '00';
-        const minutes = isEndDate ? '59' : '00';
-        const seconds = isEndDate ? '59' : '00';
-
-        // Format: YYYY-MM-DD HH:mm:ss
-        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        // Validate the date components
+        if (!year || !month || !day) {
+          throw new Error(`Invalid date format: ${dateStr}`);
+        }
+        
+        // Format with padded values and time component
+        const paddedMonth = String(month).padStart(2, '0');
+        const paddedDay = String(day).padStart(2, '0');
+        const time = isEndDate ? '23:59:59' : '00:00:00';
+        
+        return `${year}-${paddedMonth}-${paddedDay} ${time}`;
       };
 
       const formattedStartDate = formatDateWithTime(start, false);
@@ -258,7 +254,7 @@ function App() {
 
       console.log('Sending request with body:', requestBody);
       
-      const response = await axios.post('/call-log-summary', requestBody);
+      const response = await axios.post('/api/call-log-summary', requestBody);
       console.log('Raw API response:', response);
       const aggregatedData = response.data;
 
@@ -411,23 +407,19 @@ function App() {
 
       // Format dates with time components
       const formatDateWithTime = (dateStr, isEndDate = false) => {
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) {
-          throw new Error(`Invalid date: ${dateStr}`);
-        }
-
-        // Pad numbers to ensure two digits
-        const pad = (num) => String(num).padStart(2, '0');
+        const [year, month, day] = dateStr.split('-').map(num => parseInt(num, 10));
         
-        const year = date.getFullYear();
-        const month = pad(date.getMonth() + 1); // getMonth() returns 0-11
-        const day = pad(date.getDate());
-        const hours = isEndDate ? '23' : '00';
-        const minutes = isEndDate ? '59' : '00';
-        const seconds = isEndDate ? '59' : '00';
-
-        // Format: YYYY-MM-DD HH:mm:ss
-        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        // Validate the date components
+        if (!year || !month || !day) {
+          throw new Error(`Invalid date format: ${dateStr}`);
+        }
+        
+        // Format with padded values and time component
+        const paddedMonth = String(month).padStart(2, '0');
+        const paddedDay = String(day).padStart(2, '0');
+        const time = isEndDate ? '23:59:59' : '00:00:00';
+        
+        return `${year}-${paddedMonth}-${paddedDay} ${time}`;
       };
 
       const formattedStartDate = formatDateWithTime(startDate, false);
@@ -469,7 +461,7 @@ function App() {
       };
 
       console.log(`Fetching details for Agent ID: ${agentSummary.id} with body:`, requestBody);
-      const response = await axios.post('/call-log-details', requestBody);
+      const response = await axios.post('/api/call-log-details', requestBody);
       const detailedData = response.data;
 
       // Validate response data
