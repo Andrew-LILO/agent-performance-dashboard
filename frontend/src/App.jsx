@@ -54,13 +54,13 @@ const getStatusUrl = () => apiBaseUrl;
 
 // --- Constants ---
 const defaultStartDate = (() => {
-  const date = new Date();
-  date.setDate(date.getDate() - 7);
+  // Use an older date that likely has data
+  const date = new Date('2023-01-01');
   return date.toISOString().split('T')[0];
 })();
 const defaultEndDate = (() => {
-  const date = new Date();
-  date.setDate(date.getDate() - 1);
+  // Use an older date that likely has data 
+  const date = new Date('2023-01-31');
   return date.toISOString().split('T')[0];
 })();
 const adjustedEndDate = defaultEndDate < defaultStartDate ? new Date().toISOString().split('T')[0] : defaultEndDate;
