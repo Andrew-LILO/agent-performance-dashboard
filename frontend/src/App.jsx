@@ -49,8 +49,8 @@ axios.interceptors.response.use(
   }
 );
 
-// Remove trailing /api if present in the base URL for the status endpoint
-const getStatusUrl = () => apiBaseUrl.replace(/\/api$/, '');
+// No need to modify the API base URL anymore
+const getStatusUrl = () => apiBaseUrl;
 
 // --- Constants ---
 const defaultStartDate = (() => {

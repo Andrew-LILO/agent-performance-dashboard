@@ -135,26 +135,59 @@ const timeToSeconds = (timeStr) => {
 };
 
 /**
- * Formats a date string (YYYY-MM-DD) into Convoso DateTime format (YYYY-MM-DD HH:MM:SS).
- * @param {string} dateStr - Input date string (e.g., "2025-03-31").
+ * Formats a date string into Convoso DateTime format (YYYY-MM-DD HH:mm:ss).
+ * @param {string} dateStr - Input date string (e.g., "2025-03-31" or "2025-03-31 00:00:00").
  * @param {boolean} [isEndDate=false] - If true, sets time to 23:59:59, otherwise 00:00:00.
  * @returns {string} - Formatted date-time string or empty string if input is invalid.
  */
 const formatConvosoDateTime = (dateStr, isEndDate = false) => {
-    if (!dateStr || typeof dateStr !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-        console.warn(`Invalid date string passed to formatConvosoDateTime: ${dateStr}`);
-        return ''; // Return empty for invalid input
+    if (!dateStr || typeof dateStr !== 'string') {
+        console.warn(`[formatConvosoDateTime] Invalid input:`, { dateStr, type: typeof dateStr });
+        return '';
     }
+
     try {
-        const [year, month, day] = dateStr.split('-').map(Number);
-        if (!year || !month || !day) throw new Error('Invalid date components');
+        // First, extract the date components without timezone conversion
+        let year, month, day;
+
+        if (dateStr.includes('T')) {
+            // Handle ISO format (YYYY-MM-DDTHH:mm:ss.sssZ)
+            [year, month, day] = dateStr.split('T')[0].split('-').map(Number);
+        } else if (dateStr.includes(' ') && dateStr.includes(':')) {
+            // Handle "YYYY-MM-DD HH:mm:ss" format
+            [year, month, day] = dateStr.split(' ')[0].split('-').map(Number);
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            // Handle date-only format (YYYY-MM-DD)
+            [year, month, day] = dateStr.split('-').map(Number);
+        } else {
+            throw new Error(`Unsupported date format: ${dateStr}`);
+        }
+
+        // Validate date components
+        if (!year || !month || !day || month > 12 || day > 31) {
+            throw new Error(`Invalid date components: year=${year}, month=${month}, day=${day}`);
+        }
+
+        // Format components with padding
+        const formattedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const time = isEndDate ? '23:59:59' : '00:00:00';
-        const monthStr = String(month).padStart(2, '0');
-        const dayStr = String(day).padStart(2, '0');
-        return `${year}-${monthStr}-${dayStr} ${time}`;
-    } catch (e) {
-        console.error(`Error formatting date string ${dateStr}: ${e.message}`);
-        return ''; // Return empty on error
+        const formattedDateTime = `${formattedDate} ${time}`;
+
+        console.log(`[formatConvosoDateTime] Formatted date:`, {
+            input: dateStr,
+            output: formattedDateTime,
+            isEndDate
+        });
+
+        return formattedDateTime;
+
+    } catch (error) {
+        console.error(`[formatConvosoDateTime] Error:`, {
+            input: dateStr,
+            error: error.message,
+            isEndDate
+        });
+        return '';
     }
 };
 
@@ -606,23 +639,23 @@ console.log("Cron job scheduled to run daily at 3:00 AM America/New_York time.")
 
 // --- API Endpoints ---
 
-// GET /api/agents
-app.get('/api/agents', async (req, res) => {
-    console.log('GET /api/agents request received');
+// GET /agents
+app.get('/agents', async (req, res) => {
+    console.log('GET /agents request received');
     if (!AGENTS_DATA) { return res.status(500).json({ message: "Agent data configuration error." }); }
     res.json(AGENTS_DATA);
 });
 
-// GET /api/dispositions
-app.get('/api/dispositions', async (req, res) => {
-    console.log('GET /api/dispositions request received');
+// GET /dispositions
+app.get('/dispositions', async (req, res) => {
+    console.log('GET /dispositions request received');
     if (!DISPOSITIONS_DATA) { return res.status(500).json({ message: "Disposition data configuration error." }); }
     res.json(DISPOSITIONS_DATA);
 });
 
-// GET /api/campaigns (Dynamic Fetch - Corrected)
-app.get('/api/campaigns', async (req, res) => {
-    console.log('GET /api/campaigns request received');
+// GET /campaigns (Dynamic Fetch - Corrected)
+app.get('/campaigns', async (req, res) => {
+    console.log('GET /campaigns request received');
     try {
         const endpoint = `${convosoApiBaseUrl}/v1/campaigns/search`;
         const apiParams = { auth_token: convosoAuthToken, limit: 1000 };
@@ -640,30 +673,61 @@ app.get('/api/campaigns', async (req, res) => {
         }).filter(Boolean).sort((a, b) => a.campaign_name.localeCompare(b.campaign_name));
         res.json(sortedCampaigns);
     } catch (error) {
-        console.error('Error in /api/campaigns endpoint:', error.message);
+        console.error('Error in /campaigns endpoint:', error.message);
         res.status(500).json({ message: 'Failed to fetch campaigns', details: error.response?.data?.message || error.message });
     }
 });
 
 
-// GET /api/call-log-summary (API Status Filter, Local Agent Filter)
-app.get('/api/call-log-summary', async (req, res) => {
-    const { startDate, endDate, agentIds, dispositionCodes } = req.query; // Removed campaignIds
-    if (!startDate || !endDate || !dispositionCodes) { return res.status(400).json({ message: 'Start date, end date, and at least one disposition code are required' }); }
+// POST /call-log-summary (API Status Filter, Local Agent Filter)
+app.post('/call-log-summary', async (req, res) => {
+    const { startDate, endDate, agentIds, dispositionCodes } = req.body;
+    if (!startDate || !endDate || !dispositionCodes) {
+        return res.status(400).json({ message: 'Start date, end date, and at least one disposition code are required' });
+    }
 
     try {
+        // Log incoming date parameters for debugging
+        console.log('[/api/call-log-summary] Received date parameters:', {
+            startDate,
+            endDate,
+            originalStartDate: startDate,
+            originalEndDate: endDate
+        });
+
         const startDateTime = formatConvosoDateTime(startDate, false);
         const endDateTime = formatConvosoDateTime(endDate, true);
-        if (!startDateTime || !endDateTime) { return res.status(400).json({ message: 'Invalid date format provided.' }); }
-        console.log('[/api/call-log-summary] Processing request:', { dateRange: `${startDateTime} to ${endDateTime}`, agentIds: agentIds || 'all', dispositionCodes });
+
+        // Log formatted dates for debugging
+        console.log('[/api/call-log-summary] Formatted dates:', {
+            startDateTime,
+            endDateTime
+        });
+
+        if (!startDateTime || !endDateTime) {
+            return res.status(400).json({
+                message: 'Invalid date format provided.',
+                details: {
+                    receivedStartDate: startDate,
+                    receivedEndDate: endDate,
+                    expectedFormat: 'YYYY-MM-DD or YYYY-MM-DD HH:mm:ss'
+                }
+            });
+        }
 
         // Fetch Logs filtering by STATUS at API Level
         const baseParams = {
-            start_time: startDateTime, end_time: endDateTime,
-            status: dispositionCodes, // Pass comma-separated string directly to API
-            // user_id: '', // Filter user locally
-            // campaign_id: '', // No campaign filter
+            start_time: startDateTime,
+            end_time: endDateTime,
+            status: dispositionCodes,
         };
+
+        // Log API request parameters
+        console.log('[/api/call-log-summary] Convoso API request parameters:', {
+            ...baseParams,
+            auth_token: '***hidden***'
+        });
+
         const allLogs = await fetchAllCallLogs(baseParams, MAX_CALL_LOGS_TO_FETCH);
 
         // Filter Locally ONLY by Agent
@@ -672,7 +736,6 @@ app.get('/api/call-log-summary', async (req, res) => {
             const agentMatch = !selectedAgentIds || selectedAgentIds.includes(log.user_id?.toString());
             return agentMatch;
         });
-        console.log(`[Local Filter] Started with ${allLogs.length} API logs, filtered locally down to ${filteredLogs.length} logs.`);
 
         // Aggregate Filtered Results
         const summaryByAgent = {};
@@ -686,39 +749,74 @@ app.get('/api/call-log-summary', async (req, res) => {
             }
             summaryByAgent[agentId].total_calls++;
             if (status) {
-                 if (!summaryByAgent[agentId].dispositions[status]) {
+                if (!summaryByAgent[agentId].dispositions[status]) {
                     summaryByAgent[agentId].dispositions[status] = { name: log.status_name || status, count: 0 };
                 }
                 summaryByAgent[agentId].dispositions[status].count++;
             }
         });
-        console.log('[/api/call-log-summary] Request completed.', { uniqueAgents: Object.keys(summaryByAgent).length });
-        res.json(Object.values(summaryByAgent));
 
+        console.log('[/api/call-log-summary] Request completed successfully:', {
+            totalLogsReceived: allLogs.length,
+            filteredLogsCount: filteredLogs.length,
+            uniqueAgents: Object.keys(summaryByAgent).length
+        });
+
+        res.json(Object.values(summaryByAgent));
     } catch (error) {
         console.error('[/api/call-log-summary] Error:', error);
-        res.status(500).json({ message: 'Failed to fetch call log summary', details: error.message });
+        res.status(500).json({
+            message: 'Failed to fetch call log summary',
+            details: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 });
 
-// GET /api/call-log-details (For Modal - Campaign Filter Removed)
-app.get('/api/call-log-details', async (req, res) => {
-    const { startDate, endDate, agentId, dispositionCodes } = req.query; // Removed campaignIds
-     if (!startDate || !endDate || !agentId || !dispositionCodes ) { return res.status(400).json({ message: 'Start date, end date, agent ID, and disposition codes are required' }); }
+// POST /call-log-details (For Modal - Campaign Filter Removed)
+app.post('/call-log-details', async (req, res) => {
+    const { startDate, endDate, agentId, dispositionCodes } = req.body;
+    if (!startDate || !endDate || !agentId || !dispositionCodes) {
+        return res.status(400).json({ message: 'Start date, end date, agent ID, and disposition codes are required' });
+    }
 
     try {
+        // Log incoming parameters for debugging
+        console.log('[/api/call-log-details] Received parameters:', {
+            startDate,
+            endDate,
+            agentId,
+            dispositionCodes
+        });
+
         const startDateTime = formatConvosoDateTime(startDate, false);
         const endDateTime = formatConvosoDateTime(endDate, true);
-         if (!startDateTime || !endDateTime) { return res.status(400).json({ message: 'Invalid date format provided.' }); }
-        console.log('[/api/call-log-details] Processing request:', { dateRange: `${startDateTime} to ${endDateTime}`, agentId, dispositionCodes });
+        
+        if (!startDateTime || !endDateTime) {
+            return res.status(400).json({
+                message: 'Invalid date format provided.',
+                details: {
+                    receivedStartDate: startDate,
+                    receivedEndDate: endDate,
+                    expectedFormat: 'YYYY-MM-DD or YYYY-MM-DD HH:mm:ss'
+                }
+            });
+        }
+
+        console.log('[/api/call-log-details] Processing request:', {
+            dateRange: `${startDateTime} to ${endDateTime}`,
+            agentId,
+            dispositionCodes
+        });
 
         // Fetch Call Logs for the specific Agent and Status(es)
-         const baseParams = {
-             start_time: startDateTime, end_time: endDateTime,
-             user_id: agentId, // Filter by single agent ID at API level
-             status: dispositionCodes, // Filter by status(es) at API level
-             // campaign_id: '', // Removed campaign filter
-         };
+        const baseParams = {
+            start_time: startDateTime,
+            end_time: endDateTime,
+            user_id: agentId,
+            status: dispositionCodes,
+        };
+
         const agentLogs = await fetchAllCallLogs(baseParams, MODAL_LOG_LIMIT);
 
         // No further local filtering needed based on core criteria
@@ -731,53 +829,89 @@ app.get('/api/call-log-details', async (req, res) => {
         const leadDetailsPromises = uniqueLeadIds.map(leadId => fetchLeadDetailsById(leadId));
         const leadDetailsResults = await Promise.all(leadDetailsPromises);
         const leadDetailsMap = new Map();
-        leadDetailsResults.forEach(lead => { if (lead && lead.id) { leadDetailsMap.set(lead.id.toString(), lead); } });
+        leadDetailsResults.forEach(lead => {
+            if (lead && lead.id) {
+                leadDetailsMap.set(lead.id.toString(), lead);
+            }
+        });
         console.log(`Fetched details for ${leadDetailsMap.size} leads.`);
 
         // Combine Data
         const combinedData = filteredLogs.map(log => {
             const leadDetails = leadDetailsMap.get(log.lead_id?.toString()) || {};
             const getRecordingUrl = (recording) => (Array.isArray(recording) && recording.length > 0) ? (recording[0].public_url || recording[0].src || null) : null;
-            // Map data with defaults - REMOVED campaign fields
+            
             return {
-                call_log_id: log.id || 'N/A', call_date: log.call_date || null, call_length: log.call_length || 0,
-                disposition_code: log.status || 'N/A', disposition_name: log.status_name || log.status || 'N/A',
-                agent_name: log.user || 'N/A', /* call_log_campaign: log.campaign || 'N/A', */ agent_comment: log.agent_comment || '', // Removed call_log_campaign
-                recording_url: getRecordingUrl(log.recording), call_type: log.call_type || 'N/A', number_dialed: log.number_dialed || 'N/A',
-                lead_id: leadDetails.id || log.lead_id || 'N/A', lead_created_at: leadDetails.created_at || null, lead_modified_at: leadDetails.modified_at || null,
-                first_name: leadDetails.first_name || log.first_name || '', last_name: leadDetails.last_name || log.last_name || '',
-                email: leadDetails.email || 'N/A', lead_current_status_code: leadDetails.status || 'N/A', lead_current_status_name: leadDetails.status_name || 'N/A',
-                lead_user_id: leadDetails.user_id || 'N/A', lead_owner_name: leadDetails.owner_name || 'N/A',
-                lead_list_id: leadDetails.list_id || log.list_id || 'N/A', lead_list_name: leadDetails.directory_name || 'N/A',
-                /* lead_campaign_id: leadDetails.campaign_id || log.campaign_id || 'N/A', */ /* lead_campaign_name: leadDetails.campaign_name || log.campaign || 'N/A', */ // Removed lead campaign fields
-                phone_number: leadDetails.phone_number || log.phone_number || 'N/A', lead_last_called: leadDetails.last_called || null,
+                call_log_id: log.id || 'N/A',
+                call_date: log.call_date || null,
+                call_length: log.call_length || 0,
+                disposition_code: log.status || 'N/A',
+                disposition_name: log.status_name || log.status || 'N/A',
+                agent_name: log.user || 'N/A',
+                agent_comment: log.agent_comment || '',
+                recording_url: getRecordingUrl(log.recording),
+                call_type: log.call_type || 'N/A',
+                number_dialed: log.number_dialed || 'N/A',
+                lead_id: leadDetails.id || log.lead_id || 'N/A',
+                lead_created_at: leadDetails.created_at || null,
+                lead_modified_at: leadDetails.modified_at || null,
+                first_name: leadDetails.first_name || log.first_name || '',
+                last_name: leadDetails.last_name || log.last_name || '',
+                email: leadDetails.email || 'N/A',
+                lead_current_status_code: leadDetails.status || 'N/A',
+                lead_current_status_name: leadDetails.status_name || 'N/A',
+                lead_user_id: leadDetails.user_id || 'N/A',
+                lead_owner_name: leadDetails.owner_name || 'N/A',
+                lead_list_id: leadDetails.list_id || log.list_id || 'N/A',
+                lead_list_name: leadDetails.directory_name || 'N/A',
+                phone_number: leadDetails.phone_number || log.phone_number || 'N/A',
+                lead_last_called: leadDetails.last_called || null,
                 lead_last_modified_by: leadDetails.last_modified_by_name || 'N/A',
-                // Custom Fields (keep all)
-                company_name: leadDetails.field_4, monthly_revenue: leadDetails.field_94, requested_funding: leadDetails.field_93,
-                email_2: leadDetails.field_1, open_positions: leadDetails.field_306, credit_score: leadDetails.field_41,
-                liens: leadDetails.field_34, use_of_funds: leadDetails.field_601, off_the_wall_q: leadDetails.field_32,
-                business_start_date: leadDetails.field_81, timeline: leadDetails.field_212, company_desc_primary: leadDetails.field_103,
-                notes: leadDetails.field_101, ni_reasons: leadDetails.field_104, bad_lead_reason: leadDetails.field_31,
-                appt_date_time: leadDetails.field_82, fein: leadDetails.field_16, hubspot_id: leadDetails.field_10,
-                email_delivered: leadDetails.field_36, ssn: leadDetails.field_15, ownership_percent: leadDetails.field_43,
+                // Custom Fields
+                company_name: leadDetails.field_4,
+                monthly_revenue: leadDetails.field_94,
+                requested_funding: leadDetails.field_93,
+                email_2: leadDetails.field_1,
+                open_positions: leadDetails.field_306,
+                credit_score: leadDetails.field_41,
+                liens: leadDetails.field_34,
+                use_of_funds: leadDetails.field_601,
+                off_the_wall_q: leadDetails.field_32,
+                business_start_date: leadDetails.field_81,
+                timeline: leadDetails.field_212,
+                company_desc_primary: leadDetails.field_103,
+                notes: leadDetails.field_101,
+                ni_reasons: leadDetails.field_104,
+                bad_lead_reason: leadDetails.field_31,
+                appt_date_time: leadDetails.field_82,
+                fein: leadDetails.field_16,
+                hubspot_id: leadDetails.field_10,
+                email_delivered: leadDetails.field_36,
+                ssn: leadDetails.field_15,
+                ownership_percent: leadDetails.field_43,
                 main_industry: leadDetails.field_29
             };
         });
+
         console.log(`[/api/call-log-details] Request completed. Returning ${combinedData.length} detailed records.`);
         res.json(combinedData);
 
     } catch (error) {
         console.error('[/api/call-log-details] Error:', error);
-        res.status(500).json({ message: 'Failed to fetch call log details', details: error.message });
+        res.status(500).json({
+            message: 'Failed to fetch call log details',
+            details: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 });
 
 
-// GET /api/leaderboard (Keep existing implementation using Supabase if needed)
-app.get('/api/leaderboard', async (req, res) => { /* ... implementation ... */ });
+// GET /leaderboard (Keep existing implementation using Supabase if needed)
+app.get('/leaderboard', async (req, res) => { /* ... implementation ... */ });
 
 // Basic health check endpoint with more details
-app.get('/api/health', (req, res) => {
+app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
