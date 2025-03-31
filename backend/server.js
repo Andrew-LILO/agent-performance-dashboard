@@ -4,6 +4,7 @@ const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const cron = require('node-cron'); // Ensure node-cron is required
+const cors = require('cors');
 
 // --- Configuration ---
 const PORT = process.env.PORT || 3001;
@@ -32,6 +33,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // Initialize Express app
 const app = express();
 app.use(express.json());
+app.use(cors());
 
 // Health check endpoint
 app.get('/status', (req, res) => {
