@@ -80,8 +80,8 @@ function App() {
     try {
       // Fetch agents and dispositions concurrently
       const [agentsResponse, dispositionsResponse] = await Promise.all([
-        axios.get('/api/agents'),
-        axios.get('/api/dispositions'),
+        axios.get('/agents'),
+        axios.get('/dispositions'),
       ]);
 
       // Validate agents data
@@ -210,7 +210,7 @@ function App() {
         agentIds: agents.join(','),
       });
 
-      const response = await axios.get(`/api/call-log-summary?${params}`);
+      const response = await axios.get(`/call-log-summary?${params}`);
       const aggregatedData = response.data;
 
       // Validate response data
@@ -373,7 +373,7 @@ function App() {
       });
 
       console.log(`Fetching details for Agent ID: ${agentSummary.id} with params:`, params.toString());
-      const response = await axios.get(`/api/call-log-details?${params}`);
+      const response = await axios.get(`/call-log-details?${params}`);
       const detailedData = response.data;
 
       // Validate response data
