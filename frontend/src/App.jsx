@@ -210,13 +210,18 @@ function App() {
         agentIds: agents.join(','),
       });
 
+      console.log('Sending request with params:', params.toString());
+      console.log('Full URL:', `${axios.defaults.baseURL}/call-log-summary?${params}`);
+      
       const response = await axios.get(`/call-log-summary?${params}`);
+      console.log('Raw API response:', response);
       const aggregatedData = response.data;
 
       // Validate response data
       console.log('Raw aggregated data:', aggregatedData);
       
       if (!Array.isArray(aggregatedData)) {
+        console.error('Received non-array data:', aggregatedData);
         throw new Error(`Expected an array for aggregated data, got: ${typeof aggregatedData}`);
       }
 
@@ -226,13 +231,27 @@ function App() {
           console.warn('Invalid record:', record);
           return false;
         }
-        if (!record.id || !record.name || typeof record.total_calls !== 'number') {
-          console.warn('Record missing required fields:', record);
+        // Required fields for both chart and table
+        const requiredFields = ['id', 'name', 'total_calls', 'dispositions'];
+        const missingFields = requiredFields.filter(field => !record[field]);
+        if (missingFields.length > 0) {
+          console.warn(`Record missing required fields: ${missingFields.join(', ')}`, record);
+          return false;
+        }
+        // Validate total_calls is a number
+        if (typeof record.total_calls !== 'number') {
+          console.warn('total_calls is not a number:', record);
+          return false;
+        }
+        // Validate dispositions is an object
+        if (typeof record.dispositions !== 'object') {
+          console.warn('dispositions is not an object:', record);
           return false;
         }
         return true;
       });
 
+      console.log('Valid records after filtering:', validAggregatedData);
       console.log(`Received ${validAggregatedData.length} valid aggregated agent records.`);
       setSummaryData(validAggregatedData);
       
@@ -240,9 +259,9 @@ function App() {
       const validChartData = validAggregatedData.map(agent => ({
         id: agent.id,
         name: agent.name,
-        value: agent.total_calls,
+        value: agent.total_calls, // Chart expects 'value' instead of 'total_calls'
       }));
-      console.log('Chart data:', validChartData);
+      console.log('Transformed chart data:', validChartData);
       setChartData(validChartData);
 
     } catch (error) {
