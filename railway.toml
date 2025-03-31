@@ -1,3 +1,5 @@
+# railway.toml
+
 [build]
 builder = "nixpacks"
 
@@ -8,33 +10,10 @@ healthcheckTimeout = 300
 restartPolicyType = "on-failure"
 restartPolicyMaxRetries = 3
 
-[deploy.frontend]
-startCommand = "cd frontend && npm install && npm run build && npm run preview"
-healthcheckPath = "/"
-healthcheckTimeout = 300
-
 [nixpacks]
-# Backend configuration
-[[nixpacks.plan.phases.setup]]
-name = "backend-setup"
-workdir = "/backend"
-cmds = ["npm install"]
-
-[[nixpacks.plan.phases.build]]
-name = "backend-build"
-workdir = "/backend"
-cmds = ["npm run build"]
-
-# Frontend configuration
-[[nixpacks.plan.phases.setup]]
-name = "frontend-setup"
-workdir = "/frontend"
-cmds = ["npm install"]
-
-[[nixpacks.plan.phases.build]]
-name = "frontend-build"
-workdir = "/frontend"
-cmds = ["npm run build"]
+install = ["cd backend && npm install"]
+build = ["cd backend && npm run build"]
 
 [variables]
-NODE_ENV = "production" 
+NODE_ENV = "production"
+PORT = "3001"
