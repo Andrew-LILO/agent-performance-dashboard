@@ -15,6 +15,40 @@ import { toast } from "@/components/ui/sonner";
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 axios.defaults.baseURL = apiBaseUrl;
 
+// Add request interceptor for debugging
+axios.interceptors.request.use(request => {
+  console.log('Starting Request:', {
+    url: request.url,
+    method: request.method,
+    baseURL: request.baseURL,
+    fullURL: request.baseURL + request.url,
+    params: request.params,
+    data: request.data
+  });
+  return request;
+});
+
+// Add response interceptor for debugging
+axios.interceptors.response.use(
+  response => {
+    console.log('Response:', {
+      url: response.config.url,
+      status: response.status,
+      data: response.data
+    });
+    return response;
+  },
+  error => {
+    console.error('Response Error:', {
+      url: error.config?.url,
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message
+    });
+    return Promise.reject(error);
+  }
+);
+
 // Remove trailing /api if present in the base URL for the status endpoint
 const getStatusUrl = () => apiBaseUrl.replace(/\/api$/, '');
 
@@ -92,18 +126,20 @@ function App() {
         throw new Error(`Expected an array for agents, got: ${typeof fetchedAgents}`);
       }
       
-      // Validate each agent object
-      const validAgents = fetchedAgents.filter(agent => {
-        if (!agent || typeof agent !== 'object') {
-          console.warn('Invalid agent entry:', agent);
-          return false;
-        }
-        if (!agent.id_convoso_agent || !agent.name_convoso_agent) {
-          console.warn('Agent missing required fields:', agent);
-          return false;
-        }
-        return true;
-      });
+      // Map and validate each agent object
+      const validAgents = fetchedAgents
+        .filter(agent => agent && typeof agent === 'object')
+        .map(agent => ({
+          id_convoso_agent: agent.id_convoso_agent || agent.id,
+          name_convoso_agent: agent.name_convoso_agent || agent.name
+        }))
+        .filter(agent => {
+          if (!agent.id_convoso_agent || !agent.name_convoso_agent) {
+            console.warn('Agent missing required fields:', agent);
+            return false;
+          }
+          return true;
+        });
 
       // Validate dispositions data
       const fetchedDispositions = dispositionsResponse.data;
@@ -113,18 +149,20 @@ function App() {
         throw new Error(`Expected an array for dispositions, got: ${typeof fetchedDispositions}`);
       }
       
-      // Validate each disposition object
-      const validDispositions = fetchedDispositions.filter(disposition => {
-        if (!disposition || typeof disposition !== 'object') {
-          console.warn('Invalid disposition entry:', disposition);
-          return false;
-        }
-        if (!disposition.status_code_convoso || !disposition.status_name_convoso) {
-          console.warn('Disposition missing required fields:', disposition);
-          return false;
-        }
-        return true;
-      });
+      // Map and validate each disposition object
+      const validDispositions = fetchedDispositions
+        .filter(disposition => disposition && typeof disposition === 'object')
+        .map(disposition => ({
+          status_code_convoso: disposition.status_code_convoso || disposition.code,
+          status_name_convoso: disposition.status_name_convoso || disposition.name
+        }))
+        .filter(disposition => {
+          if (!disposition.status_code_convoso || !disposition.status_name_convoso) {
+            console.warn('Disposition missing required fields:', disposition);
+            return false;
+          }
+          return true;
+        });
 
       console.log("Valid Agents:", validAgents.length);
       console.log("Valid Dispositions:", validDispositions.length);
@@ -176,44 +214,51 @@ function App() {
       validateDate(start, 'Start');
       validateDate(end, 'End');
 
-      // Validate date range
-      const startDate = new Date(start);
-      const endDate = new Date(end);
-      if (endDate < startDate) {
-        throw new Error('End date cannot be before start date');
-      }
+      // Format dates with time components
+      const formatDateWithTime = (dateStr, isEndDate = false) => {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) {
+          throw new Error(`Invalid date: ${dateStr}`);
+        }
 
-      // Validate other required parameters
-      if (!dispositions || !Array.isArray(dispositions) || dispositions.length === 0) {
-        throw new Error('At least one disposition must be selected');
-      }
-      if (!agents || !Array.isArray(agents) || agents.length === 0) {
-        throw new Error('At least one agent must be selected');
-      }
+        // Pad numbers to ensure two digits
+        const pad = (num) => String(num).padStart(2, '0');
+        
+        const year = date.getFullYear();
+        const month = pad(date.getMonth() + 1); // getMonth() returns 0-11
+        const day = pad(date.getDate());
+        const hours = isEndDate ? '23' : '00';
+        const minutes = isEndDate ? '59' : '00';
+        const seconds = isEndDate ? '59' : '00';
 
-      console.log("Fetching call log summary for:", { 
-        start, 
-        end, 
-        dispositions: dispositions.length, 
-        agents: agents.length,
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString()
+        // Format: YYYY-MM-DD HH:mm:ss
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      };
+
+      const formattedStartDate = formatDateWithTime(start, false);
+      const formattedEndDate = formatDateWithTime(end, true);
+
+      console.log("Formatted dates:", {
+        formattedStartDate,
+        formattedEndDate,
+        originalStart: start,
+        originalEnd: end
       });
 
       setIsSummaryLoading(true);
       setError(null);
 
-      const params = new URLSearchParams({
-        startDate: start,
-        endDate: end,
+      // Create request body
+      const requestBody = {
+        startDate: formattedStartDate,
+        endDate: formattedEndDate,
         dispositionCodes: dispositions.join(','),
         agentIds: agents.join(','),
-      });
+      };
 
-      console.log('Sending request with params:', params.toString());
-      console.log('Full URL:', `${axios.defaults.baseURL}/call-log-summary?${params}`);
+      console.log('Sending request with body:', requestBody);
       
-      const response = await axios.get(`/call-log-summary?${params}`);
+      const response = await axios.post('/call-log-summary', requestBody);
       console.log('Raw API response:', response);
       const aggregatedData = response.data;
 
@@ -225,22 +270,23 @@ function App() {
         throw new Error(`Expected an array for aggregated data, got: ${typeof aggregatedData}`);
       }
 
-      // Validate each record in aggregated data
-      const validAggregatedData = aggregatedData.filter(record => {
+      // Map the data to match expected structure
+      const mappedData = aggregatedData.map(record => ({
+        id: record.id_convoso_agent || record.id,
+        name: record.name_convoso_agent || record.name,
+        total_calls: parseInt(record.total_calls || 0, 10),
+        dispositions: record.dispositions || {}
+      }));
+
+      // Validate each record in mapped data
+      const validAggregatedData = mappedData.filter(record => {
         if (!record || typeof record !== 'object') {
           console.warn('Invalid record:', record);
           return false;
         }
         // Required fields for both chart and table
-        const requiredFields = ['id', 'name', 'total_calls', 'dispositions'];
-        const missingFields = requiredFields.filter(field => !record[field]);
-        if (missingFields.length > 0) {
-          console.warn(`Record missing required fields: ${missingFields.join(', ')}`, record);
-          return false;
-        }
-        // Validate total_calls is a number
-        if (typeof record.total_calls !== 'number') {
-          console.warn('total_calls is not a number:', record);
+        if (!record.id || !record.name || typeof record.total_calls !== 'number') {
+          console.warn('Record missing required fields:', record);
           return false;
         }
         // Validate dispositions is an object
@@ -363,6 +409,37 @@ function App() {
       validateDate(startDate, 'Start');
       validateDate(endDate, 'End');
 
+      // Format dates with time components
+      const formatDateWithTime = (dateStr, isEndDate = false) => {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) {
+          throw new Error(`Invalid date: ${dateStr}`);
+        }
+
+        // Pad numbers to ensure two digits
+        const pad = (num) => String(num).padStart(2, '0');
+        
+        const year = date.getFullYear();
+        const month = pad(date.getMonth() + 1); // getMonth() returns 0-11
+        const day = pad(date.getDate());
+        const hours = isEndDate ? '23' : '00';
+        const minutes = isEndDate ? '59' : '00';
+        const seconds = isEndDate ? '59' : '00';
+
+        // Format: YYYY-MM-DD HH:mm:ss
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      };
+
+      const formattedStartDate = formatDateWithTime(startDate, false);
+      const formattedEndDate = formatDateWithTime(endDate, true);
+
+      console.log("Modal request formatted dates:", {
+        formattedStartDate,
+        formattedEndDate,
+        originalStart: startDate,
+        originalEnd: endDate
+      });
+
       // Validate disposition codes
       if (!Array.isArray(selectedDispositionCodes) || selectedDispositionCodes.length === 0) {
         throw new Error('At least one disposition must be selected');
@@ -383,16 +460,16 @@ function App() {
       setModalError(null);
       setIsLoadingModal(true);
 
-      // Update params
-      const params = new URLSearchParams({
-        startDate,
-        endDate,
+      // Create request body
+      const requestBody = {
+        startDate: formattedStartDate,
+        endDate: formattedEndDate,
         agentId: agentSummary.id,
         dispositionCodes: selectedDispositionCodes.join(','),
-      });
+      };
 
-      console.log(`Fetching details for Agent ID: ${agentSummary.id} with params:`, params.toString());
-      const response = await axios.get(`/call-log-details?${params}`);
+      console.log(`Fetching details for Agent ID: ${agentSummary.id} with body:`, requestBody);
+      const response = await axios.post('/call-log-details', requestBody);
       const detailedData = response.data;
 
       // Validate response data
