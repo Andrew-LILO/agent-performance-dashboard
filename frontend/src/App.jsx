@@ -112,6 +112,12 @@ function App() {
     setSelectedAgentIds([]); setSelectedDispositionCodes([]); // Clear selections initially
 
     try {
+      console.log('API base URL for initial fetch:', apiBaseUrl);
+      console.log('Full URLs for initial fetch:', {
+        agents: `${apiBaseUrl}/agents`,
+        dispositions: `${apiBaseUrl}/dispositions`
+      });
+      
       // Fetch agents and dispositions concurrently
       const [agentsResponse, dispositionsResponse] = await Promise.all([
         axios.get('/agents'),
@@ -253,6 +259,11 @@ function App() {
       };
 
       console.log('Sending request with body:', requestBody);
+      console.log('API base URL:', apiBaseUrl);
+      
+      // Log the full URL that will be used
+      const fullUrl = `${apiBaseUrl}/call-log-summary`;
+      console.log('Full URL for request:', fullUrl);
       
       const response = await axios.post('/call-log-summary', requestBody);
       console.log('Raw API response:', response);
@@ -461,6 +472,11 @@ function App() {
       };
 
       console.log(`Fetching details for Agent ID: ${agentSummary.id} with body:`, requestBody);
+      
+      // Log the full URL that will be used
+      const fullUrl = `${apiBaseUrl}/call-log-details`;
+      console.log('Full URL for detail request:', fullUrl);
+      
       const response = await axios.post('/call-log-details', requestBody);
       const detailedData = response.data;
 
