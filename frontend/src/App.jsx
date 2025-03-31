@@ -12,7 +12,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/sonner";
 
 // Configure axios
-axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL;
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+axios.defaults.baseURL = apiBaseUrl;
+
+// Remove trailing /api if present in the base URL for the status endpoint
+const getStatusUrl = () => apiBaseUrl.replace(/\/api$/, '');
 
 // --- Constants ---
 const defaultStartDate = (() => {

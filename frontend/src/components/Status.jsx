@@ -7,7 +7,7 @@ function Status() {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/status`);
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL.replace(/\/api$/, '')}/status`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
